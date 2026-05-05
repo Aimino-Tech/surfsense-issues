@@ -25,7 +25,7 @@ jobs:
               --arg num "$(echo "$line" | cut -d'|' -f1)" \
               --arg title "$(echo "$line" | cut -d'|' -f2)" \
               '. + [{"number": $num, "title": $title}]')
-          done < <(gh issue list \
+          done < <(gh issue list -R ${{ github.repository }} \
             --label "needs-info" \
             --json number,title,updatedAt \
             --jq --arg fourteen_days_ago "$FOURTEEN_DAYS_AGO" '.[] | select(
@@ -51,7 +51,7 @@ jobs:
               --arg num "$(echo "$line" | cut -d'|' -f1)" \
               --arg title "$(echo "$line" | cut -d'|' -f2)" \
               '. + [{"number": $num, "title": $title}]')
-          done < <(gh issue list \
+          done < <(gh issue list -R ${{ github.repository }} \
             --search "updated:<$THIRTY_DAYS_AGO -label:needs-info" \
             --json number,title,updatedAt \
             --jq '.[] | [.number, .title, .updatedAt] | @tsv' \
@@ -68,7 +68,7 @@ jobs:
         run: |
           echo '${{ steps.needs_info.outputs.needs_info_json }}' | jq -c '.[]' | while read -r issue; do
             NUM=$(echo "$issue" | jq -r '.number')
-            gh issue comment "$NUM" --body \
+            gh issue comment -R ${{ github.repository }} "$NUM" --body \
               "⏰ **This issue has been stalled for 14 days.**
 
               We need additional information to proceed. If we don't hear back within 7 days, this issue will be closed automatically.
@@ -85,7 +85,7 @@ jobs:
         run: |
           echo '${{ steps.stale.outputs.stale_json }}' | jq -c '.[]' | while read -r issue; do
             NUM=$(echo "$issue" | jq -r '.number')
-            gh issue close "$NUM" \
+            gh issue close -R ${{ github.repository }} "$NUM" \
               --comment "This issue has been automatically closed due to 30 days of inactivity. If this is still relevant, please reopen with updated information." \
               --reason "not_planned"
           done

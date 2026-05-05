@@ -55,7 +55,7 @@ jobs:
           CATEGORY: ${{ steps.classify.outputs.category_label }}
           PRIORITY: ${{ steps.classify.outputs.priority_label }}
         run: |
-          gh issue edit ${{ github.event.issue.number }} \
+          gh issue edit -R ${{ github.repository }} ${{ github.event.issue.number }} \
             --add-label "$CATEGORY" \
             --add-label "$PRIORITY" \
             --add-label "needs-triage"
@@ -66,7 +66,7 @@ jobs:
           ISSUE_TITLE: ${{ github.event.issue.title }}
           CATEGORY: ${{ steps.classify.outputs.category_label }}
         run: |
-          gh issue list \
+          gh issue list -R ${{ github.repository }} \
             --label "$CATEGORY" \
             --state open \
             --json number,title \
@@ -87,7 +87,7 @@ jobs:
             fi
           done < /tmp/issues.txt
           if [ -n "$SIMILAR" ]; then
-            gh issue comment ${{ github.event.issue.number }} \
+            gh issue comment -R ${{ github.repository }} ${{ github.event.issue.number }} \
               --body "🔁 **Possible duplicate**: $(echo "$SIMILAR" | head -3)"
           fi
 
@@ -98,7 +98,7 @@ jobs:
           PRIORITY: ${{ steps.classify.outputs.priority }}
         run: |
           AUTHOR="${{ github.event.issue.user.login }}"
-          SEVERITY_LABELS=$(gh issue view ${{ github.event.issue.number }} --json labels --jq '.labels[].name' | grep 'severity-' || echo "none")
+          SEVERITY_LABELS=$(gh issue view -R ${{ github.repository }} ${{ github.event.issue.number }} --json labels --jq '.labels[].name' | grep 'severity-' || echo "none")
           IS_CRITICAL=false
           if echo "$SEVERITY_LABELS" | grep -q 'severity-critical'; then
             IS_CRITICAL=true
@@ -110,7 +110,7 @@ jobs:
           fi
 
           DUPLICATE_NOTE=""
-          SIMILAR=$(gh issue comment list ${{ github.event.issue.number }} --json body --jq '.[] | select(.body | contains("Possible duplicate")) | .body' | head -1)
+          SIMILAR=$(gh issue comment -R ${{ github.repository }} list ${{ github.event.issue.number }} --json body --jq '.[] | select(.body | contains("Possible duplicate")) | .body' | head -1)
           if [ -n "$SIMILAR" ]; then
             RELATED_NUM=$(echo "$SIMILAR" | grep -oP '#\d+' | head -1)
             DUPLICATE_NOTE="\n\n🔁 This may be related to $RELATED_NUM. Please check if that covers your issue."
@@ -135,4 +135,4 @@ jobs:
           ENDBODY
           )
           echo "$BODY" > /tmp/response_body.md
-          gh issue comment ${{ github.event.issue.number }} --body-file /tmp/response_body.md
+          gh issue comment -R ${{ github.repository }} ${{ github.event.issue.number }} --body-file /tmp/response_body.md

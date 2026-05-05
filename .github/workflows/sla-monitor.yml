@@ -57,7 +57,7 @@ jobs:
                   "hours_open": $hours
                 }]')
             fi
-          done < <(gh issue list \
+          done < <(gh issue list -R ${{ github.repository }} \
             --label "priority-critical,priority-high" \
             --search "is:open -label:stalled" \
             --json number,title,createdAt,labels \
@@ -86,7 +86,7 @@ jobs:
             PRIORITY=$(echo "$issue" | jq -r '.priority')
             HOURS=$(echo "$issue" | jq -r '.hours_open')
 
-            gh issue comment "$NUM" --body \
+            gh issue comment -R ${{ github.repository }} "$NUM" --body \
               "⚠️ **SLA BREACH**: This $PRIORITY-priority issue has been open for ${HOURS}h without being triaged.
 
               Expected response time for ${PRIORITY} priority: $([ "$PRIORITY" = "critical" ] && echo "1 hour" || echo "4 hours").
