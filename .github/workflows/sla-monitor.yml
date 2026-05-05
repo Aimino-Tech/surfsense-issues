@@ -1,0 +1,104 @@
+name: SLA Monitor
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  check-sla:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Calculate Threshold
+        id: time
+        run: |
+          TWO_HOURS_AGO=$(date -u -d '2 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          FOUR_HOURS_AGO=$(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          echo "two_hours_ago=$TWO_HOURS_AGO" >> $GITHUB_OUTPUT
+          echo "four_hours_ago=$FOUR_HOURS_AGO" >> $GITHUB_OUTPUT
+
+      - name: Find SLO-Breaching Issues
+        id: find
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BREACHES="[]"
+
+          while IFS= read -r line; do
+            if [ -z "$line" ]; then continue; fi
+            BREACHES=$(echo "$BREACHES" | jq \
+              --arg num "$(echo "$line" | cut -d'|' -f1)" \
+              --arg title "$(echo "$line" | cut -d'|' -f2)" \
+              --arg created "$(echo "$line" | cut -d'|' -f3)" \
+              --arg priority "$(echo "$line" | cut -d'|' -f4)" \
+              '. + [{
+                "number": $num,
+                "title": $title,
+                "created_at": $created,
+                "priority": $priority
+              }]')
+          done < <(gh issue list \
+            --label "priority-critical,priority-high" \
+            --search "is:open no:label stalled" \
+            --json number,title,createdAt,labels \
+            --jq '.[] | select(
+              (.labels | any(.name == "priority-critical")) or
+              (.labels | any(.name == "priority-high"))
+            ) | [
+              .number,
+              .title,
+              .createdAt,
+              if (.labels | any(.name == "priority-critical")) then "critical" else "high" end
+            ] | @tsv' | sed 's/\t/|/g')
+
+          echo "breaches=$BREACHES" >> $GITHUB_OUTPUT
+          echo "breaches_json=$BREACHES" >> $GITHUB_OUTPUT
+
+          COUNT=$(echo "$BREACHES" | jq 'length')
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+
+      - name: Comment on Breached Issues
+        if: ${{ fromJson(steps.find.outputs.count) > 0 }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BREACHES: ${{ steps.find.outputs.breaches_json }}
+        run: |
+          echo "$BREACHES" | jq -c '.[]' | while read -r issue; do
+            NUM=$(echo "$issue" | jq -r '.number')
+            PRIORITY=$(echo "$issue" | jq -r '.priority')
+            CREATED=$(echo "$issue" | jq -r '.created_at')
+            HOURS_OPEN=$(python3 -c "
+from datetime import datetime, timezone
+created = datetime.fromisoformat('$CREATED'.replace('Z', '+00:00'))
+now = datetime.now(timezone.utc)
+delta = now - created
+print(f'{delta.total_seconds() / 3600:.1f}')
+")
+            gh issue comment "$NUM" --body \
+              "⚠️ **SLA BREACH**: This $PRIORITY-priority issue has been open for ${HOURS_OPEN}h without being triaged.
+
+              Expected response time for ${PRIORITY} priority: $([ "$PRIORITY" = "critical" ] && echo "1 hour" || echo "4 hours").
+
+              This issue has been escalated. A team member will follow up shortly."
+          done
+
+      - name: Alert on SLA Breach
+        if: ${{ fromJson(steps.find.outputs.count) > 0 }}
+        run: |
+          COUNT=${{ steps.find.outputs.count }}
+          echo "::warning::⚠️ SLA BREACH: $COUNT priority issues unstarted beyond SLA"
+
+      - name: Attach Breach Summary
+        if: ${{ fromJson(steps.find.outputs.count) > 0 }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "## Current SLA Breaches" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.find.outputs.breaches_json }}" | jq -c '.[]' | while read -r issue; do
+            NUM=$(echo "$issue" | jq -r '.number')
+            TITLE=$(echo "$issue" | jq -r '.title')
+            PRIORITY=$(echo "$issue" | jq -r '.priority')
+            echo "- [#$NUM](https://github.com/${{ github.repository }}/issues/$NUM) — $TITLE (priority: $PRIORITY)" >> $GITHUB_STEP_SUMMARY
+          done

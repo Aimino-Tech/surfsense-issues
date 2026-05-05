@@ -1,0 +1,110 @@
+# Labels Taxonomy for SurfSense Issues
+# Auto-synced via GitHub Labeler or manual import
+
+# --- Severity ---
+- name: severity-critical
+  description: Scores broken, agent unusable
+  color: B60205
+- name: severity-high
+  description: Wrong scores, streak broken
+  color: D93F0B
+- name: severity-medium
+  description: Cosmetic, minor score deviation
+  color: FBCA04
+- name: severity-low
+  description: Typo, trivial
+  color: 0E8A16
+
+# --- Feature Area ---
+- name: area-writing-agent
+  description: Autonomous writing agent
+  color: 1D76DB
+- name: area-scoring
+  description: Quality scoring
+  color: 1D76DB
+- name: area-gamification
+  description: XP, streaks, achievements
+  color: 1D76DB
+- name: area-spinner
+  description: Variable reward spinner
+  color: 1D76DB
+- name: area-editor
+  description: Web editor, PlateJS
+  color: 1D76DB
+- name: area-api
+  description: API contract issues
+  color: 1D76DB
+- name: area-frontend
+  description: UI/UX
+  color: 1D76DB
+- name: area-backend
+  description: Backend services
+  color: 1D76DB
+- name: area-browser-extension
+  description: Browser extension
+  color: 1D76DB
+- name: area-desktop
+  description: Desktop app
+  color: 1D76DB
+- name: area-obsidian
+  description: Obsidian plugin
+  color: 1D76DB
+
+# --- Resolution ---
+- name: needs-reproduction
+  description: Cannot reproduce with given info
+  color: FEF2C0
+- name: confirmed-bug
+  description: Validated by team
+  color: D4C5F9
+- name: planned-feature
+  description: Accepted as future feature
+  color: C2E0C6
+- name: wont-fix
+  description: Decision: not addressing
+  color: F9D0C4
+- name: fixed-in-next-release
+  description: Merged, pending release
+  color: BFDADC
+
+# --- Category ---
+- name: bug
+  description: Something is broken
+  color: B60205
+- name: feature
+  description: Request for new capability
+  color: 0E8A16
+- name: writing
+  description: Score/agent quality report
+  color: 1D76DB
+- name: gamification
+  description: Streak/XP/spinner issue
+  color: 5319E7
+- name: account
+  description: Billing/login/access issue
+  color: 006B75
+
+# --- Priority ---
+- name: priority-critical
+  description: Must be addressed immediately
+  color: B60205
+- name: priority-high
+  description: Should be addressed soon
+  color: D93F0B
+- name: priority-medium
+  description: Standard priority
+  color: FBCA04
+- name: priority-low
+  description: Low priority
+  color: 0E8A16
+
+# --- Workflow ---
+- name: needs-triage
+  description: Issue requires initial classification
+  color: E99695
+- name: needs-info
+  description: Awaiting additional information from reporter
+  color: F9D0C4
+- name: stalled
+  description: No activity for extended period
+  color: D3D3D3

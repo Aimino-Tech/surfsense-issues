@@ -1,0 +1,138 @@
+name: Auto Triage
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Classify Issue
+        id: classify
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = context.payload.issue.title;
+            const body = context.payload.issue.body || '';
+
+            const combined = (title + ' ' + body).toLowerCase();
+
+            let category = 'FEATURE';
+            let priority = 'medium';
+
+            if (/bug|error|crash|fail|broken|wrong|incorrect/.test(combined)) {
+              category = 'BUG';
+            } else if (/writing|score|quality|agent output|scoring/.test(combined)) {
+              category = 'WRITING_QUALITY';
+            } else if (/xp|streak|achievement|spinner|gamif|reward/.test(combined)) {
+              category = 'GAMIFICATION';
+            } else if (/billing|login|password|account|payment|plan|tier|subscribe/.test(combined)) {
+              category = 'ACCOUNT';
+            }
+
+            if (/critical|urgent|blocking|unusable/.test(combined)) {
+              priority = 'critical';
+            } else if (/high|important/.test(combined)) {
+              priority = 'high';
+            } else if (/low|minor|trivial|cosmetic/.test(combined)) {
+              priority = 'low';
+            }
+
+            const summary = combined.split('.').slice(0, 2).join('.').trim();
+            const categoryLabel = 'priority-' + priority;
+
+            core.setOutput('category', category);
+            core.setOutput('priority', priority);
+            core.setOutput('summary', summary);
+            core.setOutput('category_label', category.toLowerCase());
+            core.setOutput('priority_label', categoryLabel);
+
+      - name: Apply Labels
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CATEGORY: ${{ steps.classify.outputs.category_label }}
+          PRIORITY: ${{ steps.classify.outputs.priority_label }}
+        run: |
+          gh issue edit ${{ github.event.issue.number }} \
+            --add-label "$CATEGORY" \
+            --add-label "$PRIORITY" \
+            --add-label "needs-triage"
+
+      - name: Check Duplicates
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          CATEGORY: ${{ steps.classify.outputs.category_label }}
+        run: |
+          SIMILAR_ISSUES=$(gh issue list \
+            --label "$CATEGORY" \
+            --state open \
+            --json number,title \
+            --jq '.[] | "\(.number)|\(.title)"' | \
+            while IFS='|' read -r num title; do
+              SIM=$(python3 -c "
+import sys
+from difflib import SequenceMatcher
+t1 = sys.argv[1].lower()
+t2 = sys.argv[2].lower()
+ratio = SequenceMatcher(None, t1, t2).ratio()
+if ratio > 0.7:
+    print(f'#{sys.argv[3]}: {sys.argv[2]} ({ratio:.0%} match)')
+" "$ISSUE_TITLE" "$title" "$num" 2>/dev/null)
+              if [ -n "$SIM" ]; then
+                echo "$SIM"
+              fi
+            done)
+          if [ -n "$SIMILAR_ISSUES" ]; then
+            gh issue comment ${{ github.event.issue.number }} \
+              --body "🔁 **Possible duplicate**: $SIMILAR_ISSUES"
+          fi
+
+      - name: Post Auto-Response
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CATEGORY: ${{ steps.classify.outputs.category }}
+          PRIORITY: ${{ steps.classify.outputs.priority }}
+        run: |
+          AUTHOR="${{ github.event.issue.user.login }}"
+          SEVERITY_LABELS=$(gh issue view ${{ github.event.issue.number }} --json labels --jq '.labels[].name' | grep 'severity-' || echo "none")
+          IS_CRITICAL=false
+          if echo "$SEVERITY_LABELS" | grep -q 'severity-critical'; then
+            IS_CRITICAL=true
+          fi
+
+          ESCALATION_NOTE=""
+          if [ "$IS_CRITICAL" = "true" ]; then
+            ESCALATION_NOTE="\n\n_This has been escalated to the on-call engineer._"
+          fi
+
+          DUPLICATE_NOTE=""
+          SIMILAR=$(gh issue comment list ${{ github.event.issue.number }} --json body --jq '.[] | select(.body | contains("Possible duplicate")) | .body' | head -1)
+          if [ -n "$SIMILAR" ]; then
+            RELATED_NUM=$(echo "$SIMILAR" | grep -oP '#\d+' | head -1)
+            DUPLICATE_NOTE="\n\n🔁 This may be related to $RELATED_NUM. Please check if that covers your issue."
+          fi
+
+          SLA_TIME="48 hours"
+          if [ "${{ steps.classify.outputs.priority }}" = "critical" ]; then
+            SLA_TIME="24 hours"
+          fi
+
+          BODY=$(cat <<ENDBODY
+          Hi @${AUTHOR}, thanks for the report! 🤖
+
+          I've classified this as **[${{ env.CATEGORY }}]** with **${{ env.PRIORITY }}** priority.${DUPLICATE_NOTE}
+
+          **Next steps:**
+          - Our team will review this within ${SLA_TIME}
+          - In the meantime, can you confirm:
+            - What version of SurfSense are you running? (\`git log -1 --oneline\`)
+            - Does this happen consistently or intermittently?
+          ${ESCALATION_NOTE}
+          ENDBODY
+          )
+          echo "$BODY" > /tmp/response_body.md
+          gh issue comment ${{ github.event.issue.number }} --body-file /tmp/response_body.md

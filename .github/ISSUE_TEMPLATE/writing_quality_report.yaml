@@ -1,0 +1,70 @@
+name: Writing Quality Report
+description: Report scoring inaccuracy, agent regression, or gamification bug
+title: "[Writing] "
+labels: ["writing", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping us improve writing quality.
+        Please paste the EXACT input and output so we can reproduce the issue.
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Critical (scores are broken entirely)
+        - High (scores are wrong, agent produces worse output)
+        - Medium (cosmetic, minor score deviation)
+        - Low (typo in gamification text)
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Your Input (what you asked the writing agent)
+      description: Paste the EXACT text you provided
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Agent Output (what you received)
+      description: Paste the EXACT output
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: scores
+    attributes:
+      label: Scores Shown (if applicable)
+      description: What scores did the writing agent show? Include all metrics displayed.
+      render: markdown
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Output / Scores
+      description: What output or scores did you expect instead?
+      render: markdown
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Reproducibility
+      description: How often does this happen?
+      options:
+        - Always (every time)
+        - Often (more than 50% of attempts)
+        - Sometimes (less than 50%)
+        - Rarely (happened once)
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I have included the EXACT input and output text
+          required: true
+        - label: I have checked that this issue has not been reported before
+          required: true
