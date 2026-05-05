@@ -18,9 +18,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 << 'PYEOF'
-import json, os, subprocess, sys, urllib.parse
-
+          python3 -c "
+import json, os, subprocess, sys
 try:
     import yaml
 except ImportError:
@@ -35,9 +34,8 @@ if not isinstance(labels, list):
     sys.exit(1)
 
 repo_full = os.environ['GITHUB_REPOSITORY']
-
 result = subprocess.run(
-    ['gh', 'api', f'/repos/{repo_full}/labels', '--paginate'],
+    ['gh', 'api', '/repos/' + repo_full + '/labels', '--paginate'],
     capture_output=True, text=True
 )
 existing = json.loads(result.stdout)
@@ -45,30 +43,28 @@ existing_names = {l['name'] for l in existing}
 
 for label in labels:
     name = label['name']
+    url = '/repos/' + repo_full + '/labels'
     if name in existing_names:
-        encoded = urllib.parse.quote(name, safe='')
-        url = f'/repos/{repo_full}/labels/{encoded}'
+        url_arg = url + '/' + name.replace(' ', '%20')
         data = {'color': label.get('color', 'ededed'), 'description': label.get('description', '')}
-        subprocess.run(['gh', 'api', url, '--method', 'PATCH', '--input', '-'],
+        subprocess.run(['gh', 'api', url_arg, '--method', 'PATCH', '--input', '-'],
             input=json.dumps(data), capture_output=True, text=True)
-        print(f'Updated label: {name}')
+        print('Updated label: ' + name)
     else:
-        url = f'/repos/{repo_full}/labels'
         data = {'name': name, 'color': label.get('color', 'ededed'), 'description': label.get('description', '')}
         subprocess.run(['gh', 'api', url, '--method', 'POST', '--input', '-'],
             input=json.dumps(data), capture_output=True, text=True)
-        print(f'Created label: {name}')
+        print('Created label: ' + name)
 
-# List existing labels again to show preserved ones
 result2 = subprocess.run(
-    ['gh', 'api', f'/repos/{repo_full}/labels', '--paginate'],
+    ['gh', 'api', '/repos/' + repo_full + '/labels', '--paginate'],
     capture_output=True, text=True
 )
 existing2 = json.loads(result2.stdout)
 defined_names = {l['name'] for l in labels}
 for l in existing2:
     if l['name'] not in defined_names:
-        print(f'Preserved existing label (not in labels.yml): {l["name"]}')
+        print('Preserved existing label (not in labels.yml): ' + l['name'])
 
-print(f'Sync complete: {len(labels)} labels processed')
-PYEOF
+print('Sync complete: ' + str(len(labels)) + ' labels processed')
+"
