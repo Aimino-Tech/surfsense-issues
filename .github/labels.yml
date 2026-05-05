@@ -61,7 +61,7 @@
   description: Accepted as future feature
   color: C2E0C6
 - name: wont-fix
-  description: Decision: not addressing
+  description: "Decision: not addressing"
   color: F9D0C4
 - name: fixed-in-next-release
   description: Merged, pending release
