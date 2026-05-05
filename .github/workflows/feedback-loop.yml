@@ -28,10 +28,11 @@ jobs:
           done < <(gh issue list -R ${{ github.repository }} \
             --label "needs-info" \
             --json number,title,updatedAt \
-            --jq --arg fourteen_days_ago "$FOURTEEN_DAYS_AGO" '.[] | select(
+            2>/dev/null \
+            | jq --arg fourteen_days_ago "$FOURTEEN_DAYS_AGO" '.[] | select(
               .updatedAt <= $fourteen_days_ago
             ) | [.number, .title, .updatedAt] | @tsv' \
-            2>/dev/null | sed 's/\t/|/g')
+            | sed 's/\t/|/g')
 
           echo "needs_info_json=$NEEDS_INFO_ISSUES" >> $GITHUB_OUTPUT
           NI_COUNT=$(echo "$NEEDS_INFO_ISSUES" | jq 'length')

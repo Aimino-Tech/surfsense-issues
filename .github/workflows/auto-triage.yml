@@ -58,7 +58,7 @@ jobs:
           gh issue edit -R ${{ github.repository }} ${{ github.event.issue.number }} \
             --add-label "$CATEGORY" \
             --add-label "$PRIORITY" \
-            --add-label "needs-triage"
+            --remove-label "needs-triage" 2>/dev/null || true
 
       - name: Check Duplicates
         env:
@@ -110,15 +110,10 @@ jobs:
           fi
 
           DUPLICATE_NOTE=""
-          SIMILAR=$(gh issue comment -R ${{ github.repository }} list ${{ github.event.issue.number }} --json body --jq '.[] | select(.body | contains("Possible duplicate")) | .body' | head -1)
+          SIMILAR=$(gh issue view -R ${{ github.repository }} ${{ github.event.issue.number }} --json comments --jq '.comments[] | select(.body | contains("Possible duplicate")) | .body' | head -1)
           if [ -n "$SIMILAR" ]; then
             RELATED_NUM=$(echo "$SIMILAR" | grep -oP '#\d+' | head -1)
             DUPLICATE_NOTE="\n\n🔁 This may be related to $RELATED_NUM. Please check if that covers your issue."
-          fi
-
-          SLA_TIME="48 hours"
-          if [ "${{ steps.classify.outputs.priority }}" = "critical" ]; then
-            SLA_TIME="24 hours"
           fi
 
           BODY=$(cat <<ENDBODY
@@ -127,7 +122,7 @@ jobs:
           I've classified this as **[${{ env.CATEGORY }}]** with **${{ env.PRIORITY }}** priority.${DUPLICATE_NOTE}
 
           **Next steps:**
-          - Our team will review this within ${SLA_TIME}
+          - Our team will review this based on the priority and support tier (see [SUPPORT.md](https://github.com/${{ github.repository }}/blob/main/SUPPORT.md) for SLA details)
           - In the meantime, can you confirm:
             - Does this happen consistently or intermittently?
             - If you haven't already, please add the version you're running
