@@ -1,7 +1,7 @@
 name: Feedback Loop
 on:
   schedule:
-    - cron: '0 6 * * 1'  # Every Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -11,58 +11,63 @@ jobs:
   stalled:
     runs-on: ubuntu-latest
     steps:
-      - name: Find Stalled Issues
-        id: stalled
+      - name: Find Needs-Info Issues (14+ days)
+        id: needs_info
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          STALLED_ISSUES="[]"
           FOURTEEN_DAYS_AGO=$(date -u -d '14 days ago' +%Y-%m-%dT%H:%M:%SZ)
-          SEVEN_DAYS_AGO=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          NEEDS_INFO_ISSUES="[]"
 
           while IFS= read -r line; do
             if [ -z "$line" ]; then continue; fi
-            STALLED_ISSUES=$(echo "$STALLED_ISSUES" | jq \
+            NEEDS_INFO_ISSUES=$(echo "$NEEDS_INFO_ISSUES" | jq \
               --arg num "$(echo "$line" | cut -d'|' -f1)" \
               --arg title "$(echo "$line" | cut -d'|' -f2)" \
-              --arg updated "$(echo "$line" | cut -d'|' -f3)" \
-              '. + [{"number": $num, "title": $title, "updated_at": $updated}]')
+              '. + [{"number": $num, "title": $title}]')
           done < <(gh issue list \
             --label "needs-info" \
             --json number,title,updatedAt \
-            --jq '.[] | select(
-              .updatedAt <= $FOURTEEN_DAYS_AGO
+            --jq --arg fourteen_days_ago "$FOURTEEN_DAYS_AGO" '.[] | select(
+              .updatedAt <= $fourteen_days_ago
             ) | [.number, .title, .updatedAt] | @tsv' \
             2>/dev/null | sed 's/\t/|/g')
 
-          # Also find issues with no activity for 30 days (not closed)
-          while IFS= read -r line; do
-            if [ -z "$line" ]; then continue; fi
-            STALLED_ISSUES=$(echo "$STALLED_ISSUES" | jq \
-              --arg num "$(echo "$line" | cut -d'|' -f1)" \
-              --arg title "$(echo "$line" | cut -d'|' -f2)" \
-              --arg updated "$(echo "$line" | cut -d'|' -f3)" \
-              '. + [{"number": $num, "title": $title, "updated_at": $updated}]')
-          done < <(gh issue list \
-            --search "updated:<$(date -u -d '30 days ago' +%Y-%m-%d)" \
-            --json number,title,updatedAt \
-            --jq '.[] | select(
-              (.labels | any(.name == "needs-info") | not)
-            ) | [.number, .title, .updatedAt] | @tsv' \
-            2>/dev/null | sed 's/\t/|/g')
+          echo "needs_info_json=$NEEDS_INFO_ISSUES" >> $GITHUB_OUTPUT
+          NI_COUNT=$(echo "$NEEDS_INFO_ISSUES" | jq 'length')
+          echo "ni_count=$NI_COUNT" >> $GITHUB_OUTPUT
 
-          echo "count=$(echo "$STALLED_ISSUES" | jq 'length')" >> $GITHUB_OUTPUT
-          echo "stalled=$STALLED_ISSUES" >> $GITHUB_OUTPUT
-
-      - name: Comment on Needs-Info Issues (14 days)
-        if: ${{ fromJson(steps.stalled.outputs.count) > 0 }}
+      - name: Find Stale Issues (30+ days)
+        id: stale
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo '${{ steps.stalled.outputs.stalled }}' | jq -c '.[]' | while read -r issue; do
+          THIRTY_DAYS_AGO=$(date -u -d '30 days ago' +%Y-%m-%d)
+          STALE_ISSUES="[]"
+
+          while IFS= read -r line; do
+            if [ -z "$line" ]; then continue; fi
+            STALE_ISSUES=$(echo "$STALE_ISSUES" | jq \
+              --arg num "$(echo "$line" | cut -d'|' -f1)" \
+              --arg title "$(echo "$line" | cut -d'|' -f2)" \
+              '. + [{"number": $num, "title": $title}]')
+          done < <(gh issue list \
+            --search "updated:<$THIRTY_DAYS_AGO -label:needs-info" \
+            --json number,title,updatedAt \
+            --jq '.[] | [.number, .title, .updatedAt] | @tsv' \
+            2>/dev/null | sed 's/\t/|/g')
+
+          echo "stale_json=$STALE_ISSUES" >> $GITHUB_OUTPUT
+          ST_COUNT=$(echo "$STALE_ISSUES" | jq 'length')
+          echo "st_count=$ST_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Comment on Needs-Info Issues (14 days)
+        if: ${{ fromJson(steps.needs_info.outputs.ni_count) > 0 }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo '${{ steps.needs_info.outputs.needs_info_json }}' | jq -c '.[]' | while read -r issue; do
             NUM=$(echo "$issue" | jq -r '.number')
-            TITLE=$(echo "$issue" | jq -r '.title')
-            UPDATED=$(echo "$issue" | jq -r '.updated_at')
             gh issue comment "$NUM" --body \
               "⏰ **This issue has been stalled for 14 days.**
 
@@ -73,12 +78,12 @@ jobs:
               _If you no longer need this, you can close the issue yourself._"
           done
 
-      - name: Close Stalled Issues (30 days no activity)
-        if: ${{ fromJson(steps.stalled.outputs.count) > 0 }}
+      - name: Close Stale Issues (30 days)
+        if: ${{ fromJson(steps.stale.outputs.st_count) > 0 }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo '${{ steps.stalled.outputs.stalled }}' | jq -c '.[]' | while read -r issue; do
+          echo '${{ steps.stale.outputs.stale_json }}' | jq -c '.[]' | while read -r issue; do
             NUM=$(echo "$issue" | jq -r '.number')
             gh issue close "$NUM" \
               --comment "This issue has been automatically closed due to 30 days of inactivity. If this is still relevant, please reopen with updated information." \
@@ -86,23 +91,42 @@ jobs:
           done
 
       - name: Generate Report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          COUNT=${{ steps.stalled.outputs.count }}
-          if [ "$COUNT" -gt 0 ]; then
-            echo "### Feedback Loop Report" >> $GITHUB_STEP_SUMMARY
+          NI_COUNT=${{ steps.needs_info.outputs.ni_count }}
+          ST_COUNT=${{ steps.stale.outputs.st_count }}
+          TOTAL=$((NI_COUNT + ST_COUNT))
+
+          echo "### Feedback Loop Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$TOTAL" -gt 0 ]; then
+            echo "**$NI_COUNT needs-info issues commented, $ST_COUNT stale issues closed**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**$COUNT stalled issues processed**" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Issue | Title | Last Updated | Action |" >> $GITHUB_STEP_SUMMARY
-            echo "|-------|-------|-------------|--------|" >> $GITHUB_STEP_SUMMARY
-            echo '${{ steps.stalled.outputs.stalled }}' | jq -c '.[]' | while read -r issue; do
-              NUM=$(echo "$issue" | jq -r '.number')
-              TITLE=$(echo "$issue" | jq -r '.title')
-              UPDATED=$(echo "$issue" | jq -r '.updated_at')
-              echo "| #$NUM | $TITLE | $UPDATED | Commented/Closed |" >> $GITHUB_STEP_SUMMARY
-            done
+
+            if [ "$NI_COUNT" -gt 0 ]; then
+              echo "**Commented (needs-info, 14+ days):**" >> $GITHUB_STEP_SUMMARY
+              echo '| Issue | Title |' >> $GITHUB_STEP_SUMMARY
+              echo '|-------|-------|' >> $GITHUB_STEP_SUMMARY
+              echo '${{ steps.needs_info.outputs.needs_info_json }}' | jq -c '.[]' | while read -r issue; do
+                NUM=$(echo "$issue" | jq -r '.number')
+                TITLE=$(echo "$issue" | jq -r '.title')
+                echo "| #$NUM | $TITLE |" >> $GITHUB_STEP_SUMMARY
+              done
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            if [ "$ST_COUNT" -gt 0 ]; then
+              echo "**Closed (30+ days):**" >> $GITHUB_STEP_SUMMARY
+              echo '| Issue | Title |' >> $GITHUB_STEP_SUMMARY
+              echo '|-------|-------|' >> $GITHUB_STEP_SUMMARY
+              echo '${{ steps.stale.outputs.stale_json }}' | jq -c '.[]' | while read -r issue; do
+                NUM=$(echo "$issue" | jq -r '.number')
+                TITLE=$(echo "$issue" | jq -r '.title')
+                echo "| #$NUM | $TITLE |" >> $GITHUB_STEP_SUMMARY
+              done
+            fi
           else
-            echo "### Feedback Loop Report" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
             echo "No stalled issues found. All issues are actively managed." >> $GITHUB_STEP_SUMMARY
           fi

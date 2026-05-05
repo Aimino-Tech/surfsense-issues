@@ -11,15 +11,7 @@ jobs:
   check-sla:
     runs-on: ubuntu-latest
     steps:
-      - name: Calculate Threshold
-        id: time
-        run: |
-          TWO_HOURS_AGO=$(date -u -d '2 hours ago' +%Y-%m-%dT%H:%M:%SZ)
-          FOUR_HOURS_AGO=$(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%SZ)
-          echo "two_hours_ago=$TWO_HOURS_AGO" >> $GITHUB_OUTPUT
-          echo "four_hours_ago=$FOUR_HOURS_AGO" >> $GITHUB_OUTPUT
-
-      - name: Find SLO-Breaching Issues
+      - name: Find Priority Issues Past SLA Threshold
         id: find
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -28,20 +20,45 @@ jobs:
 
           while IFS= read -r line; do
             if [ -z "$line" ]; then continue; fi
-            BREACHES=$(echo "$BREACHES" | jq \
-              --arg num "$(echo "$line" | cut -d'|' -f1)" \
-              --arg title "$(echo "$line" | cut -d'|' -f2)" \
-              --arg created "$(echo "$line" | cut -d'|' -f3)" \
-              --arg priority "$(echo "$line" | cut -d'|' -f4)" \
-              '. + [{
-                "number": $num,
-                "title": $title,
-                "created_at": $created,
-                "priority": $priority
-              }]')
+
+            NUM=$(echo "$line" | cut -d'|' -f1)
+            TITLE=$(echo "$line" | cut -d'|' -f2)
+            CREATED=$(echo "$line" | cut -d'|' -f3)
+            PRIORITY=$(echo "$line" | cut -d'|' -f4)
+
+            HOURS_OPEN=$(python3 -c "
+from datetime import datetime, timezone
+created = datetime.fromisoformat('$CREATED'.replace('Z', '+00:00'))
+now = datetime.now(timezone.utc)
+delta = now - created
+print(f'{delta.total_seconds() / 3600:.1f}')
+")
+            if [ "$PRIORITY" = "critical" ]; then
+              THRESHOLD=1
+            else
+              THRESHOLD=4
+            fi
+
+            IN_RANGE=$(python3 -c "print($HOURS_OPEN >= $THRESHOLD)")
+
+            if [ "$IN_RANGE" = "True" ]; then
+              BREACHES=$(echo "$BREACHES" | jq \
+                --arg num "$NUM" \
+                --arg title "$TITLE" \
+                --arg created "$CREATED" \
+                --arg priority "$PRIORITY" \
+                --arg hours "$HOURS_OPEN" \
+                '. + [{
+                  "number": $num,
+                  "title": $title,
+                  "created_at": $created,
+                  "priority": $priority,
+                  "hours_open": $hours
+                }]')
+            fi
           done < <(gh issue list \
             --label "priority-critical,priority-high" \
-            --search "is:open no:label stalled" \
+            --search "is:open -label:stalled" \
             --json number,title,createdAt,labels \
             --jq '.[] | select(
               (.labels | any(.name == "priority-critical")) or
@@ -53,9 +70,7 @@ jobs:
               if (.labels | any(.name == "priority-critical")) then "critical" else "high" end
             ] | @tsv' | sed 's/\t/|/g')
 
-          echo "breaches=$BREACHES" >> $GITHUB_OUTPUT
           echo "breaches_json=$BREACHES" >> $GITHUB_OUTPUT
-
           COUNT=$(echo "$BREACHES" | jq 'length')
           echo "count=$COUNT" >> $GITHUB_OUTPUT
 
@@ -68,16 +83,10 @@ jobs:
           echo "$BREACHES" | jq -c '.[]' | while read -r issue; do
             NUM=$(echo "$issue" | jq -r '.number')
             PRIORITY=$(echo "$issue" | jq -r '.priority')
-            CREATED=$(echo "$issue" | jq -r '.created_at')
-            HOURS_OPEN=$(python3 -c "
-from datetime import datetime, timezone
-created = datetime.fromisoformat('$CREATED'.replace('Z', '+00:00'))
-now = datetime.now(timezone.utc)
-delta = now - created
-print(f'{delta.total_seconds() / 3600:.1f}')
-")
+            HOURS=$(echo "$issue" | jq -r '.hours_open')
+
             gh issue comment "$NUM" --body \
-              "⚠️ **SLA BREACH**: This $PRIORITY-priority issue has been open for ${HOURS_OPEN}h without being triaged.
+              "⚠️ **SLA BREACH**: This $PRIORITY-priority issue has been open for ${HOURS}h without being triaged.
 
               Expected response time for ${PRIORITY} priority: $([ "$PRIORITY" = "critical" ] && echo "1 hour" || echo "4 hours").
 
@@ -88,7 +97,7 @@ print(f'{delta.total_seconds() / 3600:.1f}')
         if: ${{ fromJson(steps.find.outputs.count) > 0 }}
         run: |
           COUNT=${{ steps.find.outputs.count }}
-          echo "::warning::⚠️ SLA BREACH: $COUNT priority issues unstarted beyond SLA"
+          echo "::warning::⚠️ SLA BREACH: $COUNT priority issues beyond SLA threshold"
 
       - name: Attach Breach Summary
         if: ${{ fromJson(steps.find.outputs.count) > 0 }}
@@ -100,5 +109,6 @@ print(f'{delta.total_seconds() / 3600:.1f}')
             NUM=$(echo "$issue" | jq -r '.number')
             TITLE=$(echo "$issue" | jq -r '.title')
             PRIORITY=$(echo "$issue" | jq -r '.priority')
-            echo "- [#$NUM](https://github.com/${{ github.repository }}/issues/$NUM) — $TITLE (priority: $PRIORITY)" >> $GITHUB_STEP_SUMMARY
+            HOURS=$(echo "$issue" | jq -r '.hours_open')
+            echo "- [#$NUM](https://github.com/${{ github.repository }}/issues/$NUM) — $TITLE ($PRIORITY, ${HOURS}h open)" >> $GITHUB_STEP_SUMMARY
           done

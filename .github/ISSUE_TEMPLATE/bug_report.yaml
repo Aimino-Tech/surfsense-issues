@@ -43,8 +43,8 @@ body:
     id: version
     attributes:
       label: SurfSense Version
-      description: What version of SurfSense are you running? Run `git log -1 --oneline` in your SurfSense directory.
-      placeholder: "e.g. a1b2c3d"
+      description: What version of SurfSense are you running? For git installs, run `git log -1 --oneline`. For Docker, check your image tag.
+      placeholder: "e.g. a1b2c3d or v0.0.22"
     validations:
       required: true
   - type: textarea

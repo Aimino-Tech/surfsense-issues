@@ -41,13 +41,12 @@ jobs:
               priority = 'low';
             }
 
-            const summary = combined.split('.').slice(0, 2).join('.').trim();
+            const labelMap = { 'BUG': 'bug', 'FEATURE': 'feature', 'WRITING_QUALITY': 'writing', 'GAMIFICATION': 'gamification', 'ACCOUNT': 'account' };
             const categoryLabel = 'priority-' + priority;
 
             core.setOutput('category', category);
             core.setOutput('priority', priority);
-            core.setOutput('summary', summary);
-            core.setOutput('category_label', category.toLowerCase());
+            core.setOutput('category_label', labelMap[category] || 'feature');
             core.setOutput('priority_label', categoryLabel);
 
       - name: Apply Labels
@@ -129,8 +128,8 @@ if ratio > 0.7:
           **Next steps:**
           - Our team will review this within ${SLA_TIME}
           - In the meantime, can you confirm:
-            - What version of SurfSense are you running? (\`git log -1 --oneline\`)
             - Does this happen consistently or intermittently?
+            - If you haven't already, please add the version you're running
           ${ESCALATION_NOTE}
           ENDBODY
           )

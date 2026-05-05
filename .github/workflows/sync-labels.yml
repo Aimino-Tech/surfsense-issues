@@ -1,0 +1,77 @@
+name: Sync Labels
+on:
+  push:
+    branches: [main]
+    paths: ['.github/labels.yml']
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync Labels from labels.yml
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const yaml = require('js-yaml');
+            const labelsPath = '.github/labels.yml';
+
+            if (!fs.existsSync(labelsPath)) {
+              console.log('labels.yml not found, skipping sync');
+              return;
+            }
+
+            const yamlContent = fs.readFileSync(labelsPath, 'utf8');
+            const labels = yaml.load(yamlContent);
+
+            if (!Array.isArray(labels)) {
+              console.log('labels.yml does not contain a label array, skipping sync');
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const existingLabels = await github.rest.issues.listLabelsForRepo({
+              owner,
+              repo
+            });
+            const existingNames = new Set(existingLabels.data.map(l => l.name));
+
+            for (const label of labels) {
+              if (existingNames.has(label.name)) {
+                await github.rest.issues.updateLabel({
+                  owner,
+                  repo,
+                  name: label.name,
+                  new_name: label.name,
+                  color: label.color,
+                  description: label.description
+                });
+                console.log(`Updated label: ${label.name}`);
+              } else {
+                await github.rest.issues.createLabel({
+                  owner,
+                  repo,
+                  name: label.name,
+                  color: label.color,
+                  description: label.description
+                });
+                console.log(`Created label: ${label.name}`);
+              }
+            }
+
+            for (const existingLabel of existingLabels.data) {
+              const definedNames = new Set(labels.map(l => l.name));
+              if (!definedNames.has(existingLabel.name)) {
+                console.log(`Preserved existing label (not in labels.yml): ${existingLabel.name}`);
+              }
+            }
+
+            console.log(`Sync complete: ${labels.length} labels processed`);

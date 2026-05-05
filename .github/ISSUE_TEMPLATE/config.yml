@@ -3,6 +3,9 @@ contact_links:
   - name: SurfSense Documentation
     url: https://github.com/Aimino-Tech/SurfSense
     about: Check the main SurfSense repository for documentation and guides
+  - name: SurfSense Discussions
+    url: https://github.com/Aimino-Tech/SurfSense/discussions
+    about: Ask questions and discuss ideas with the community
   - name: SurfSense Website
     url: https://surfsense.ai
     about: Visit the SurfSense website for product information
