@@ -26,13 +26,14 @@ jobs:
             CREATED=$(echo "$line" | cut -d'|' -f3)
             PRIORITY=$(echo "$line" | cut -d'|' -f4)
 
-            HOURS_OPEN=$(python3 -c "
-from datetime import datetime, timezone
-created = datetime.fromisoformat('$CREATED'.replace('Z', '+00:00'))
-now = datetime.now(timezone.utc)
-delta = now - created
-print(f'{delta.total_seconds() / 3600:.1f}')
-")
+            HOURS_OPEN=$(python3 -c '
+          import sys
+          from datetime import datetime, timezone
+          created = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+          now = datetime.now(timezone.utc)
+          delta = now - created
+          print(f"{delta.total_seconds() / 3600:.1f}")
+          ' "$CREATED")
             if [ "$PRIORITY" = "critical" ]; then
               THRESHOLD=1
             else

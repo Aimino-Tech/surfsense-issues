@@ -66,28 +66,29 @@ jobs:
           ISSUE_TITLE: ${{ github.event.issue.title }}
           CATEGORY: ${{ steps.classify.outputs.category_label }}
         run: |
-          SIMILAR_ISSUES=$(gh issue list \
+          gh issue list \
             --label "$CATEGORY" \
             --state open \
             --json number,title \
-            --jq '.[] | "\(.number)|\(.title)"' | \
-            while IFS='|' read -r num title; do
-              SIM=$(python3 -c "
-import sys
-from difflib import SequenceMatcher
-t1 = sys.argv[1].lower()
-t2 = sys.argv[2].lower()
-ratio = SequenceMatcher(None, t1, t2).ratio()
-if ratio > 0.7:
-    print(f'#{sys.argv[3]}: {sys.argv[2]} ({ratio:.0%} match)')
-" "$ISSUE_TITLE" "$title" "$num" 2>/dev/null)
-              if [ -n "$SIM" ]; then
-                echo "$SIM"
-              fi
-            done)
-          if [ -n "$SIMILAR_ISSUES" ]; then
+            --jq '.[] | "\(.number)|\(.title)"' > /tmp/issues.txt
+          SIMILAR=""
+          while IFS='|' read -r num title; do
+            SIM=$(python3 -c '
+          import sys
+          from difflib import SequenceMatcher
+          t1 = sys.argv[1].lower()
+          t2 = sys.argv[2].lower()
+          ratio = SequenceMatcher(None, t1, t2).ratio()
+          if ratio > 0.7:
+              print(f"#{sys.argv[3]}: {sys.argv[2]} ({ratio:.0%} match)")
+          ' "$ISSUE_TITLE" "$title" "$num" 2>/dev/null)
+            if [ -n "$SIM" ]; then
+              SIMILAR="$SIMILAR$SIM"$'\n'
+            fi
+          done < /tmp/issues.txt
+          if [ -n "$SIMILAR" ]; then
             gh issue comment ${{ github.event.issue.number }} \
-              --body "🔁 **Possible duplicate**: $SIMILAR_ISSUES"
+              --body "🔁 **Possible duplicate**: $(echo "$SIMILAR" | head -3)"
           fi
 
       - name: Post Auto-Response

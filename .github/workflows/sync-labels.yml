@@ -18,53 +18,54 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 -c "
-import json, os, subprocess, sys
-try:
-    import yaml
-except ImportError:
-    subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pyyaml', '-q'])
-    import yaml
+          python3 -c '
+          import json, os, subprocess, sys, urllib.request, urllib.parse
 
-with open('.github/labels.yml') as f:
-    labels = yaml.safe_load(f)
+          try:
+              import yaml
+          except ImportError:
+              subprocess.check_call([sys.executable, "-m", "pip", "install", "pyyaml", "-q"])
+              import yaml
 
-if not isinstance(labels, list):
-    print('labels.yml must contain a list')
-    sys.exit(1)
+          with open(".github/labels.yml") as f:
+              labels = yaml.safe_load(f)
 
-repo_full = os.environ['GITHUB_REPOSITORY']
-result = subprocess.run(
-    ['gh', 'api', '/repos/' + repo_full + '/labels', '--paginate'],
-    capture_output=True, text=True
-)
-existing = json.loads(result.stdout)
-existing_names = {l['name'] for l in existing}
+          if not isinstance(labels, list):
+              print("labels.yml must contain a list")
+              sys.exit(1)
 
-for label in labels:
-    name = label['name']
-    url = '/repos/' + repo_full + '/labels'
-    if name in existing_names:
-        url_arg = url + '/' + name.replace(' ', '%20')
-        data = {'color': label.get('color', 'ededed'), 'description': label.get('description', '')}
-        subprocess.run(['gh', 'api', url_arg, '--method', 'PATCH', '--input', '-'],
-            input=json.dumps(data), capture_output=True, text=True)
-        print('Updated label: ' + name)
-    else:
-        data = {'name': name, 'color': label.get('color', 'ededed'), 'description': label.get('description', '')}
-        subprocess.run(['gh', 'api', url, '--method', 'POST', '--input', '-'],
-            input=json.dumps(data), capture_output=True, text=True)
-        print('Created label: ' + name)
+          repo_full = os.environ["GITHUB_REPOSITORY"]
+          result = subprocess.run(
+              ["gh", "api", "/repos/" + repo_full + "/labels", "--paginate"],
+              capture_output=True, text=True
+          )
+          existing = json.loads(result.stdout)
+          existing_names = {l["name"] for l in existing}
 
-result2 = subprocess.run(
-    ['gh', 'api', '/repos/' + repo_full + '/labels', '--paginate'],
-    capture_output=True, text=True
-)
-existing2 = json.loads(result2.stdout)
-defined_names = {l['name'] for l in labels}
-for l in existing2:
-    if l['name'] not in defined_names:
-        print('Preserved existing label (not in labels.yml): ' + l['name'])
+          for label in labels:
+              name = label["name"]
+              url = "/repos/" + repo_full + "/labels"
+              if name in existing_names:
+                  url_arg = url + "/" + urllib.parse.quote(name, safe="")
+                  data = {"color": label.get("color", "ededed"), "description": label.get("description", "")}
+                  subprocess.run(["gh", "api", url_arg, "--method", "PATCH", "--input", "-"],
+                      input=json.dumps(data), capture_output=True, text=True)
+                  print("Updated label: " + name)
+              else:
+                  data = {"name": name, "color": label.get("color", "ededed"), "description": label.get("description", "")}
+                  subprocess.run(["gh", "api", url, "--method", "POST", "--input", "-"],
+                      input=json.dumps(data), capture_output=True, text=True)
+                  print("Created label: " + name)
 
-print('Sync complete: ' + str(len(labels)) + ' labels processed')
-"
+          result2 = subprocess.run(
+              ["gh", "api", "/repos/" + repo_full + "/labels", "--paginate"],
+              capture_output=True, text=True
+          )
+          existing2 = json.loads(result2.stdout)
+          defined_names = {l["name"] for l in labels}
+          for l in existing2:
+              if l["name"] not in defined_names:
+                  print("Preserved existing label (not in labels.yml): " + l["name"])
+
+          print("Sync complete: " + str(len(labels)) + " labels processed")
+          '
